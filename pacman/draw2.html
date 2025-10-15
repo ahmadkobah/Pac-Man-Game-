@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pac-Man Game</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: black;
+            margin: 0;
+            flex-direction: column;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            border: 2px solid white;
+            margin-bottom: 10px;
+        }
+        #gameUI {
+            display: flex;
+            justify-content: space-between;
+            width: 448px;
+            padding: 0 10px;
+            box-sizing: border-box;
+        }
+        #livesCounter, #scoreCounter {
+            padding: 8px 20px;
+            font-size: 18px;
+            background-color: #333;
+            color: white;
+            border: 2px solid #ffcc00;
+            border-radius: 5px;
+            min-width: 120px;
+            text-align: center;
+        }
+        #restartButton, #startButton {
+            padding: 10px 20px;
+            font-size: 18px;
+            background-color: #ffcc00;
+            color: black;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        #restartButton:hover, #startButton:hover {
+            background-color: #ffdd33;
+        }
+        #restartButton {
+            display: none;
+        }
+        #startButton {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 10;
+        }
+        .blur {
+            filter: blur(4px);
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="448" height="496"></canvas>
+    <div id="gameUI">
+        <div id="livesCounter">Lives: 3</div>
+        <div id="scoreCounter">Score: 0</div>
+    </div>
+    <button id="restartButton">Play Again</button>
+    <button id="startButton">Start Game</button>
+    
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const restartButton = document.getElementById("restartButton");
+        const startButton = document.getElementById("startButton");
+        const livesCounter = document.getElementById("livesCounter");
+        const scoreCounter = document.getElementById("scoreCounter");
+
+        const tileSize = 16;
+        const rows = 31;
+        const cols = 28;
+
+        let pacman, ghosts, pellets, walls, lives, gameRunning, gameOver, invincible, invincibleTimer, score;
+
+        function initGame() {
+            pacman = {
+                x: 1.5 * tileSize,
+                y: 1.5 * tileSize,
+                radius: tileSize / 2.5,
+                speed: tileSize / 16,
+                dx: 0,
+                dy: 0
+            };
+
+            ghosts = [
+                { x: 14 * tileSize, y: 16 * tileSize, dx: tileSize / 12, dy: 0, radius: tileSize / 2, color: "red", directionChangeCooldown: 0 }
+            ];
+
+            pellets = [];
+            walls = [];
+            lives = 3;
+            score = 0;
+            gameRunning = false;
+            gameOver = false;
+            invincible = false;
+            invincibleTimer = 0;
+
+            livesCounter.textContent = `Lives: ${lives}`;
+            scoreCounter.textContent = `Score: ${score}`;
+
+            for (let r = 0; r < maze.length; r++) {
+                for (let c = 0; c < maze[r].length; c++) {
+                    let x = c * tileSize;
+                    let y = r * tileSize;
+                    if (maze[r][c] === '#') {
+                        walls.push({ x, y, width: tileSize, height: tileSize });
+                    } else if (maze[r][c] === '.' || maze[r][c] === 'o') {
+                        pellets.push({ 
+                            x: x + tileSize / 2, 
+                            y: y + tileSize / 2, 
+                            radius: maze[r][c] === 'o' ? 6 : 3,
+                            isPowerPellet: maze[r][c] === 'o'
+                        });
+                    }
+                }
+            }
+
+            document.getElementById("gameCanvas").classList.add("blur");
+            document.getElementById("gameUI").classList.add("blur");
+            startButton.style.display = 'block';
+            restartButton.style.display = 'none';
+        }
+
+        const maze = [
+            "############################",
+            "#............##............#",
+            "#.####.#####.##.#####.####.#",
+            "#o####.#####.##.#####.####o#",
+            "#..........................#",
+            "#.####.##.########.##.####.#",
+            "#.####.##.########.##.####.#",
+            "#......##..........##......#",
+            "#.####..#.########.#..####.#",
+            "#.####..#..........#..####.#",
+            "#.####..#.########.#..####.#",
+            "#.####..#..........#..####.#",
+            "#.####....###..###....####.#",
+            "#..........................#",
+            "#.####..#.########.##.####.#",
+            "#.####..#..........##.####.#",
+            "#.####..#.###  ###.##.####.#",
+            "#.####..#.########.##.####.#",
+            "#.####....########....####.#",
+            "#............##............#",
+            "#.####..####.##.####..####.#",
+            "#.####..####.##.####..####.#",
+            "#o......##........##......o#",
+            "###..##.##.######.##.##..###",
+            "###..##.##.######.##.##..###",
+            "#............##............#",
+            "#..########..##..########..#",
+            "#..........................#",
+            "#o########################o#",
+            "#..........................#",
+            "############################"
+        ];
+
+        function drawPacman() {
+            if (invincible && Math.floor(Date.now() / 100) % 2 === 0) return;
+            ctx.fillStyle = "yellow";
+            ctx.beginPath();
+            ctx.arc(pacman.x, pacman.y, pacman.radius, 0.2 * Math.PI, 1.8 * Math.PI);
+            ctx.lineTo(pacman.x, pacman.y);
+            ctx.fill();
+            ctx.closePath();
+        }
+
+        function drawGhosts() {
+            ghosts.forEach(ghost => {
+                ctx.fillStyle = ghost.color;
+                ctx.beginPath();
+                ctx.arc(ghost.x, ghost.y, ghost.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.closePath();
+            });
+        }
+
+        function drawPellets() {
+            pellets.forEach(pellet => {
+                ctx.fillStyle = "white";
+                ctx.beginPath();
+                ctx.arc(pellet.x, pellet.y, pellet.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.closePath();
+            });
+        }
+
+        function drawWalls() {
+            ctx.fillStyle = "blue";
+            walls.forEach(wall => {
+                ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+            });
+        }
+
+        function checkCollision(x, y) {
+            return walls.some(wall => 
+                x + pacman.radius > wall.x &&
+                x - pacman.radius < wall.x + wall.width &&
+                y + pacman.radius > wall.y &&
+                y - pacman.radius < wall.y + wall.height
+            );
+        }
+
+        function loseLife() {
+            if (invincible) return;
+            lives--;
+            livesCounter.textContent = `Lives: ${lives}`;
+            invincible = true;
+            invincibleTimer = 60;
+            if (lives <= 0) {
+                gameOver = true;
+                gameRunning = false;
+                restartButton.style.display = 'block';
+            } else {
+                pacman.x = 1.5 * tileSize;
+                pacman.y = 1.5 * tileSize;
+                pacman.dx = 0;
+                pacman.dy = 0;
+                ghosts.forEach(ghost => {
+                    ghost.x = 14 * tileSize;
+                    ghost.y = 13 * tileSize;
+                });
+                gameRunning = false;
+                setTimeout(() => gameRunning = true, 1000);
+            }
+        }
+
+        function updateScore(points) {
+            score += points;
+            scoreCounter.textContent = `Score: ${score}`;
+        }
+
+        function displayGameOver() {
+            ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "white";
+            ctx.font = "48px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2 - 30);
+            ctx.font = "24px Arial";
+            ctx.fillText(`Final Score: ${score}`, canvas.width/2, canvas.height/2 + 30);
+        }
+
+        function displayWinMessage() {
+            ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "white";
+            ctx.font = "48px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText("YOU WIN!", canvas.width/2, canvas.height/2 - 30);
+            ctx.font = "24px Arial";
+            ctx.fillText(`Final Score: ${score}`, canvas.width/2, canvas.height/2 + 30);
+            restartButton.style.display = 'block';
+        }
+
+        function moveGhosts() {
+            ghosts.forEach(ghost => {
+                if (ghost.directionChangeCooldown <= 0) {
+                    let directions = [
+                        { dx: tileSize / 17, dy: 0 },
+                        { dx: -tileSize / 17, dy: 0 },
+                        { dx: 0, dy: tileSize / 17 },
+                        { dx: 0, dy: -tileSize / 17 }
+                    ];
+                    let validMoves = directions.filter(dir => !checkCollision(ghost.x + dir.dx, ghost.y + dir.dy));
+                    if (validMoves.length > 0) {
+                        let move = validMoves[Math.floor(Math.random() * validMoves.length)];
+                        ghost.dx = move.dx;
+                        ghost.dy = move.dy;
+                    }
+                    ghost.directionChangeCooldown = 30;
+                }
+                let newX = ghost.x + ghost.dx;
+                let newY = ghost.y + ghost.dy;
+                if (!checkCollision(newX, newY)) {
+                    ghost.x = newX;
+                    ghost.y = newY;
+                } else {
+                    ghost.directionChangeCooldown = 0;
+                }
+                ghost.directionChangeCooldown--;
+            });
+        }
+
+        function update() {
+            if (!gameRunning || gameOver) return;
+            if (invincible) {
+                invincibleTimer--;
+                if (invincibleTimer <= 0) {
+                    invincible = false;
+                }
+            }
+            let newX = pacman.x + pacman.dx;
+            let newY = pacman.y + pacman.dy;
+            if (!checkCollision(newX, newY)) {
+                pacman.x = newX;
+                pacman.y = newY;
+            }
+
+            pellets = pellets.filter(pellet => {
+                const eaten = Math.hypot(pacman.x - pellet.x, pacman.y - pellet.y) < pacman.radius;
+                if (eaten) {
+                    updateScore(pellet.isPowerPellet ? 50 : 10);
+                }
+                return !eaten;
+            });
+
+            if (pellets.length === 0) {
+                gameRunning = false;
+                displayWinMessage();
+            }
+
+            ghosts.forEach(ghost => {
+                const distance = Math.hypot(pacman.x - ghost.x, pacman.y - ghost.y);
+                if (distance < pacman.radius + ghost.radius) {
+                    loseLife();
+                }
+            });
+
+            moveGhosts();
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawWalls();
+            drawPacman();
+            drawGhosts();
+            drawPellets();
+
+            if (gameRunning && !gameOver) {
+                update();
+            } else if (gameOver) {
+                displayGameOver();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        document.addEventListener("keydown", (event) => {
+            if (!gameRunning) return;
+            let moves = { 
+                "ArrowRight": [pacman.speed, 0], 
+                "ArrowLeft": [-pacman.speed, 0], 
+                "ArrowUp": [0, -pacman.speed], 
+                "ArrowDown": [0, pacman.speed] 
+            };
+            if (moves[event.key]) {
+                let [dx, dy] = moves[event.key];
+                if (!checkCollision(pacman.x + dx, pacman.y + dy)) {
+                    pacman.dx = dx;
+                    pacman.dy = dy;
+                }
+            }
+        });
+
+        restartButton.addEventListener("click", () => {
+            initGame();
+        });
+
+        startButton.addEventListener("click", () => {
+            startButton.style.display = "none";
+            document.getElementById("gameCanvas").classList.remove("blur");
+            document.getElementById("gameUI").classList.remove("blur");
+            gameRunning = true;
+        });
+
+        initGame();
+        gameLoop();
+    </script>
+</body>
+</html>
